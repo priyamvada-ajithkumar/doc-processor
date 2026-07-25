@@ -1,0 +1,13 @@
+SERVICE AGREEMENT
+
+This agreement is made between Northwind Supplies GmbH (the Provider) and
+ACME Industrial AG (the Client).
+
+Effective Date: 2026-05-01
+The agreement has a term of 24 months from the effective date.
+
+The Provider shall deliver quarterly maintenance of all sensor equipment.
+The Client shall provide site access during business hours.
+
+Either party may terminate with 60 days' written notice.
+This agreement is governed by the laws of Germany.

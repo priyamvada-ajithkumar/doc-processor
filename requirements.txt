@@ -1,0 +1,18 @@
+pydantic>=2.7
+pydantic-settings>=2.2
+PyMuPDF>=1.24
+pytesseract>=0.3.10
+Pillow>=10.0
+# --- Optional: second OCR engine (heavy, pulls torch) ---
+# easyocr>=1.7
+# --- Real LLM providers (mock mode needs neither) ---
+# openai>=1.30
+# anthropic>=0.30
+# instructor>=1.3
+# --- Async processing ---
+# celery>=5.3
+# redis>=5.0
+# --- Review UI ---
+streamlit>=1.35
+# --- Dev ---
+pytest>=8.0

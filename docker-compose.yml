@@ -1,0 +1,18 @@
+services:
+  redis:
+    image: redis:7-alpine
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s }
+
+  worker:
+    build: .
+    command: celery -A docproc.pipeline:celery_app worker --loglevel=info --concurrency=2
+    environment: { DOCPROC_LLM_PROVIDER: "${DOCPROC_LLM_PROVIDER:-mock}" }
+    volumes: [ "./data:/app/data" ]
+    depends_on: { redis: { condition: service_healthy } }
+
+  review-ui:
+    build: .
+    ports: [ "8501:8501" ]
+    environment: { DOCPROC_LLM_PROVIDER: "${DOCPROC_LLM_PROVIDER:-mock}" }
+    volumes: [ "./data:/app/data" ]
+    depends_on: [ redis ]
