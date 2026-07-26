@@ -15,6 +15,8 @@ def main() -> None:
         print(f"{r.source_file:30s} {r.doc_type.value:9s} "
               f"ocr={r.ocr_backend}({r.ocr_confidence:.2f}) "
               f"conf={r.overall_confidence:.2f} -> {r.route}")
+        if r.extraction_error:
+            print(f"   [error] {r.extraction_error}")
         for issue in r.validation_issues:
             print(f"   [{issue.severity}] {issue.field}: {issue.message}")
         for a in r.anomalies:
