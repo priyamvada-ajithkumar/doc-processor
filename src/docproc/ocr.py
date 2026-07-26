@@ -24,17 +24,29 @@ from __future__ import annotations
 import io
 import logging
 import re
+import shutil
+import sys
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
 import fitz  # PyMuPDF
 import pytesseract
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageOps
 
 from .config import get_settings
 
 log = logging.getLogger(__name__)
+
+# The Windows (UB Mannheim) installer does not reliably add itself to PATH,
+# so pytesseract's bare `tesseract` subprocess call fails with WinError 2 even
+# on a correct install. Fall back to the default install location.
+if sys.platform == "win32" and not shutil.which("tesseract"):
+    _WIN_TESSERACT = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+    if _WIN_TESSERACT.exists():
+        pytesseract.pytesseract.tesseract_cmd = str(_WIN_TESSERACT)
+    else:
+        log.warning("tesseract not found on PATH or at %s", _WIN_TESSERACT)
 
 try:  # optional second engine (heavy: pulls torch)
     import easyocr  # type: ignore
@@ -65,22 +77,64 @@ class OCRResult:
 # ---------------------------------------------------------------------------
 
 
+#: Target short-edge size for the upscale step. A page scanned at 300 DPI is
+#: ~2480px on its short edge; anything materially below that has glyphs too
+#: small for Tesseract regardless of how large the canvas is.
+UPSCALE_TARGET_PX = 2000
+
+
+def _otsu_threshold(img: Image.Image) -> int:
+    """Otsu's method: the grey level that best separates ink from paper.
+
+    A fixed threshold guesses at the scan's exposure and is wrong for any
+    scan that isn't the one it was tuned on. Otsu derives the split from
+    the image's own histogram by maximizing between-class variance.
+    """
+    hist = img.histogram()
+    total = sum(hist)
+    sum_all = sum(i * h for i, h in enumerate(hist))
+    sum_bg = weight_bg = 0
+    best_variance, best_threshold = -1.0, 128
+    for level in range(256):
+        weight_bg += hist[level]
+        if weight_bg == 0:
+            continue
+        weight_fg = total - weight_bg
+        if weight_fg == 0:
+            break
+        sum_bg += level * hist[level]
+        mean_bg = sum_bg / weight_bg
+        mean_fg = (sum_all - sum_bg) / weight_fg
+        variance = weight_bg * weight_fg * (mean_bg - mean_fg) ** 2
+        if variance > best_variance:
+            best_variance, best_threshold = variance, level
+    return best_threshold
+
+
 def preprocess(img: Image.Image) -> Image.Image:
     """Classic OCR preprocessing chain. Each step targets a failure mode:
 
     grayscale  -> color noise confuses binarization
     upscale    -> Tesseract wants >=300 DPI-equivalent glyph sizes
     autocontrast -> washed-out scans
-    median filter -> salt-and-pepper scanner noise
     binarize   -> crisp black/white glyph edges
+
+    No median filter: measured against both clean and artificially noisy
+    samples it lost accuracy in each case (it erodes thin glyph strokes,
+    which costs more than the speckle it removes). Denoising belongs after
+    upscaling and at a radius tied to glyph size, not as a fixed size-3
+    pass — until that exists, not denoising reads better.
     """
     img = ImageOps.grayscale(img)
-    if min(img.size) < 1000:
-        scale = 1000 / min(img.size)
+    # Scale on the SHORT edge against a DPI-equivalent target. Gating on
+    # `min(size) < 1000` instead let a 1400x1500 page (~120 DPI) through
+    # untouched, and Tesseract returned noise for it at 0.16 confidence.
+    if min(img.size) < UPSCALE_TARGET_PX:
+        scale = UPSCALE_TARGET_PX / min(img.size)
         img = img.resize((int(img.width * scale), int(img.height * scale)), Image.LANCZOS)
     img = ImageOps.autocontrast(img)
-    img = img.filter(ImageFilter.MedianFilter(size=3))
-    img = img.point(lambda p: 255 if p > 160 else 0)
+    threshold = _otsu_threshold(img)
+    img = img.point(lambda p: 255 if p > threshold else 0)
     return img
 
 
